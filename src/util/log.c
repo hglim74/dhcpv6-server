@@ -1,10 +1,15 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "util/log.h"
 #include <stdio.h>
 #include <time.h>
+#include <stdarg.h>
 
 static log_level_t g_lvl = LOG_INFO;
 
-void log_set_level(log_level_t lvl){ g_lvl = lvl; }
+void log_set_level(log_level_t lvl){
+  g_lvl = lvl;
+}
 
 static const char* lvl_s(log_level_t l){
   switch(l){
@@ -22,13 +27,16 @@ void log_printf(log_level_t lvl, const char* fmt, ...){
   time_t t = time(NULL);
   struct tm tm;
   localtime_r(&t, &tm);
-  char buf[32];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
 
-  fprintf(stderr, "%s [%s] ", buf, lvl_s(lvl));
+  char tbuf[32];
+  strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &tm);
+
+  fprintf(stderr, "%s [%s] ", tbuf, lvl_s(lvl));
+
   va_list ap;
   va_start(ap, fmt);
   vfprintf(stderr, fmt, ap);
   va_end(ap);
+
   fputc('\n', stderr);
 }

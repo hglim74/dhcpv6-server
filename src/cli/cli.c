@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include "cli/cli.h"
 #include "config/config.h"
 #include "util/log.h"
@@ -17,7 +19,20 @@ static server_ctx_t* g_ctx = NULL;
 static void set_nonblock(int fd){
   int flags = fcntl(fd, F_GETFL, 0);
   if(flags >= 0){
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  }
+}
+
+static void write_all(int fd, const char* s){
+  size_t len = strlen(s);
+  size_t off = 0;
+  while(off < len){
+    ssize_t n = write(fd, s + off, len - off);
+    if(n < 0){
+      if(errno == EINTR) continue;
+      break;
+    }
+    off += (size_t)n;
   }
 }
 
@@ -60,10 +75,6 @@ int cli_get_fd(void){
   return cli_fd;
 }
 
-static void send_str(int fd, const char* s){
-  write(fd, s, strlen(s));
-}
-
 static void handle_command(int cfd){
   char buf[256];
   ssize_t n = read(cfd, buf, sizeof(buf)-1);
@@ -71,7 +82,7 @@ static void handle_command(int cfd){
   buf[n] = 0;
 
   if(strncmp(buf, "show config", 11) == 0){
-    send_str(cfd, "OK\n");
+    write_all(cfd, "OK\n");
     config_dump(g_ctx);
   }
   else if(strncmp(buf, "set log", 7) == 0){
@@ -79,10 +90,10 @@ static void handle_command(int cfd){
     else if(strstr(buf, "INFO")) log_set_level(LOG_INFO);
     else if(strstr(buf, "WARN")) log_set_level(LOG_WARN);
     else if(strstr(buf, "ERROR")) log_set_level(LOG_ERR);
-    send_str(cfd, "OK\n");
+    write_all(cfd, "OK\n");
   }
   else{
-    send_str(cfd, "UNKNOWN COMMAND\n");
+    write_all(cfd, "UNKNOWN COMMAND\n");
   }
 }
 
