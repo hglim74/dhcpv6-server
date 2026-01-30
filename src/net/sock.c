@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "net/sock.h"
 #include "util/log.h"
 
@@ -5,7 +6,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netinet/ip6.h>
+#include <arpa/inet.h>
 
 int dh6_sock_open(dh6_sock_t* s, uint16_t port){
   memset(s, 0, sizeof(*s));
@@ -39,7 +42,8 @@ int dh6_sock_recv(dh6_sock_t* s, uint8_t* buf, size_t cap, size_t* out_len,
                   struct sockaddr_in6* peer, int* out_ifindex)
 {
   struct iovec iov = { .iov_base = buf, .iov_len = cap };
-  uint8_t cmsgbuf[256];
+  uint8_t cmsgbuf[CMSG_SPACE(sizeof(struct in6_pktinfo))];
+
   struct msghdr msg;
   memset(&msg, 0, sizeof(msg));
   msg.msg_name = peer;
@@ -59,9 +63,13 @@ int dh6_sock_recv(dh6_sock_t* s, uint8_t* buf, size_t cap, size_t* out_len,
   *out_len = (size_t)n;
   *out_ifindex = 0;
 
-  for(struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c != NULL; c = CMSG_NXTHDR(&msg,c)){
-    if(c->cmsg_level == IPPROTO_IPV6 && c->cmsg_type == IPV6_PKTINFO){
-      struct in6_pktinfo* pi = (struct in6_pktinfo*)CMSG_DATA(c);
+  for(struct cmsghdr* c = CMSG_FIRSTHDR(&msg);
+      c != NULL;
+      c = CMSG_NXTHDR(&msg, c)){
+    if(c->cmsg_level == IPPROTO_IPV6 &&
+       c->cmsg_type == IPV6_PKTINFO){
+      struct in6_pktinfo* pi =
+        (struct in6_pktinfo*)CMSG_DATA(c);
       *out_ifindex = (int)pi->ipi6_ifindex;
       break;
     }
@@ -83,16 +91,16 @@ int dh6_sock_send(dh6_sock_t* s, const uint8_t* buf, size_t len,
   msg.msg_namelen = sizeof(*peer);
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
-
-  struct cmsghdr* cmsg = (struct cmsghdr*)cmsgbuf;
   msg.msg_control = cmsgbuf;
   msg.msg_controllen = sizeof(cmsgbuf);
 
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   cmsg->cmsg_level = IPPROTO_IPV6;
   cmsg->cmsg_type = IPV6_PKTINFO;
   cmsg->cmsg_len = CMSG_LEN(sizeof(struct in6_pktinfo));
 
-  struct in6_pktinfo* pi = (struct in6_pktinfo*)CMSG_DATA(cmsg);
+  struct in6_pktinfo* pi =
+    (struct in6_pktinfo*)CMSG_DATA(cmsg);
   pi->ipi6_ifindex = (unsigned)ifindex;
 
   ssize_t n = sendmsg(s->fd, &msg, 0);

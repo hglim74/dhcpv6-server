@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "cli/cli.h"
 #include "config/config.h"
 #include "util/log.h"
@@ -38,7 +39,7 @@ int cli_init(server_ctx_t* ctx, const char* path){
   unlink(path);
 
   if(bind(cli_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0){
-    log_printf(LOG_ERR, "cli bind failed");
+    log_printf(LOG_ERR, "cli bind failed: %s", strerror(errno));
     close(cli_fd);
     cli_fd = -1;
     return -1;
@@ -59,6 +60,10 @@ int cli_get_fd(void){
   return cli_fd;
 }
 
+static void send_str(int fd, const char* s){
+  write(fd, s, strlen(s));
+}
+
 static void handle_command(int cfd){
   char buf[256];
   ssize_t n = read(cfd, buf, sizeof(buf)-1);
@@ -66,7 +71,7 @@ static void handle_command(int cfd){
   buf[n] = 0;
 
   if(strncmp(buf, "show config", 11) == 0){
-    dprintf(cfd, "OK\n");
+    send_str(cfd, "OK\n");
     config_dump(g_ctx);
   }
   else if(strncmp(buf, "set log", 7) == 0){
@@ -74,10 +79,10 @@ static void handle_command(int cfd){
     else if(strstr(buf, "INFO")) log_set_level(LOG_INFO);
     else if(strstr(buf, "WARN")) log_set_level(LOG_WARN);
     else if(strstr(buf, "ERROR")) log_set_level(LOG_ERR);
-    dprintf(cfd, "OK\n");
+    send_str(cfd, "OK\n");
   }
   else{
-    dprintf(cfd, "UNKNOWN COMMAND\n");
+    send_str(cfd, "UNKNOWN COMMAND\n");
   }
 }
 
@@ -88,7 +93,7 @@ void cli_handle(void){
     int cfd = accept(cli_fd, NULL, NULL);
     if(cfd < 0){
       if(errno == EAGAIN || errno == EWOULDBLOCK)
-        return; // no more clients
+        return;
       log_printf(LOG_WARN, "cli accept error");
       return;
     }
